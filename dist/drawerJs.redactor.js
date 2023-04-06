@@ -27371,8 +27371,6 @@ DrawerJs.texts = {
       result.left += currScrollLeft;
       $currElement = $currElement.parent();
     }
-    result.top += $(document).scrollTop();
-    result.left += $(document).scrollLeft();
     return result;
   };
 
@@ -28671,10 +28669,7 @@ DrawerJs.texts = {
     var firstRun = !this.$imageElement;
 
     this.$imageElement = $(document.getElementById('canvas_image_' + this.id));
-    this.$imageElement.parent().css({
-        'position': 'relative'
-    });
-    
+
     if (firstRun) {
       if (this.options.align) {
          this.aligmentCss = this._generateAlignCss(this.options.align);
@@ -28837,7 +28832,11 @@ DrawerJs.texts = {
     var $canvas = $('<canvas width="' + this.width + '"' +
     ' height="' + this.height + '" />');
 
+    this.$canvasEditContainer = $('<span id="redactor-drawer-box" ' +
+    'data-canvas-id="' + this.id + '" tabindex="0"></span>');
     this.$canvasEditContainer = $('<span></span>');
+    this.$canvasEditContainer.attr('id', 'redactor-drawer-box');
+    this.$canvasEditContainer.attr('data-canvas-id', this.id);
     this.$canvasEditContainer.attr({
       'id':'redactor-drawer-box',
       'class': 'drawer-instance-container',
@@ -28859,8 +28858,8 @@ DrawerJs.texts = {
     this.aligmentCss = this.getAligmentCssFor(this.$imageElement);
 
     this.$canvasEditContainer.append($canvas);
-    
-    this.$imageElement.parent().append(this.$canvasEditContainer);
+
+    $('body').append(this.$canvasEditContainer);
     this.adjustEditContainer();
     $(window).on('resize.drawer' + this.id, function () {
       _this.adjustEditContainer(false, true);
@@ -29214,8 +29213,8 @@ DrawerJs.texts = {
       this.$canvasEditContainer.removeClass('animated');
     }
     this.$canvasEditContainer.css({
-      top: 0,
-      left: 0
+      top: imageOffset.top,
+      left: imageOffset.left
     });
     if (!withAnimation) {
       if (doNotUseDelay) {
@@ -30030,8 +30029,8 @@ DrawerJs.texts = {
         });
 
     this.trigger(this.EVENT_EDIT_START);
-    
-    this.$canvasEditContainer.on('keydown', function (event) {
+
+    this.$canvasEditContainer.on('keydown', '.canvas-container', function (event) {
       _this.trigger(_this.EVENT_KEYDOWN, event);
 
       var isDelKey = event.which == 8,
@@ -30073,7 +30072,7 @@ DrawerJs.texts = {
 
   Drawer.prototype.getSerializedCanvas = function () {
     var serializedCanvas = this.fCanvas.toJSON();
-    var serializedCanvasStr = JSON.stringify(serializedCanvas);
+    var serializedCanvasStr = JSON.stringify(serializedCanvas, null, 2);
     return serializedCanvasStr;
   };
 
@@ -35199,14 +35198,10 @@ ToolOptionsToolbar.prototype.customScrollMode = true;
     var left = 0;
 
     var arrowSize = 8,
+        scroll = util.getScrollTopFromElement($trigger),
         triggerSizes = $trigger.get(0).getBoundingClientRect(),
-        tooltipSizes = $tooltip.get(0).getBoundingClientRect(),
-        //use just document scroll because tooltips are relative to document
-        scroll = {
-            left: $(document).scrollLeft(),
-            top: $(document).scrollTop(),
-        };
-    
+        tooltipSizes = $tooltip.get(0).getBoundingClientRect();
+
     switch (position.positionX) {
       case 'right':
         left = scroll.left + triggerSizes.left + triggerSizes.width + arrowSize;
@@ -44206,11 +44201,6 @@ CloseButton.prototype._onCloseButtonClick = function() {
      * @type {DrawerJs.plugins.OpacityControl}
      */
       this.opacityControl = new pluginsNamespace.OpacityControl(this.drawer, this.options);
-      
-    /**
-     * Variable to save color used before switching to transparent
-     */
-      this.transparentSaveColor = null;
     };
 
     ColorTool.prototype = Object.create(BaseToolOptions.prototype);
@@ -44242,11 +44232,14 @@ CloseButton.prototype._onCloseButtonClick = function() {
    * @param {String} selectedColor Hash value of user selected color.
    */
   ColorTool.prototype._onColorSelected = function (selectedColor) {
-    if (selectedColor == "rgba(0, 0, 0, 0)") {
-      //selected transparent color
-      this.saveColor();
+    if (selectedColor == 'transparent') {
+      var opacity = this.opacityControl.getOpacity();
+      var colorWithAlfaRgba = this._hexToRgba(selectedColor, opacity);
+  
+      this.drawer.setColor(colorWithAlfaRgba); 
+    } else {
+      this.drawer.setColor(selectedColor);
     }
-    this.drawer.setColor(selectedColor);
   };
 
 
@@ -44278,7 +44271,6 @@ CloseButton.prototype._onCloseButtonClick = function() {
         // @todo: rework in target.getColor()
         color = target.get('stroke');
         this.colorControl.disableTransparent();
-        this.restoreColor();
       }  else {
         color = target.get('fill');
         this.colorControl.enableTransparent();
@@ -44305,44 +44297,6 @@ CloseButton.prototype._onCloseButtonClick = function() {
         var source = fColor._source;
         var opacity = source[3];
         this.opacityControl.setOpacity(opacity);
-  };
-
-  /**
-   * Shows / hides transparency based on current selected tool
-   * @param {BaseTool} tool
-   */
-  ColorTool.prototype.onActivateTool = function (tool) {
-      if (tool instanceof pluginsNamespace.Line ||
-          tool instanceof pluginsNamespace.ArrowOneSide ||
-          tool instanceof pluginsNamespace.ArrowTwoSide ||
-          tool instanceof pluginsNamespace.Pencil) {
-        //no transparent for them
-        this.colorControl.disableTransparent();
-        this.restoreColor();
-      } else {
-        //should be save to activate
-        this.colorControl.enableTransparent();
-      }
-  };
-  
-  /**
-   * Save current color into transparentSaveColor
-   */
-  ColorTool.prototype.saveColor = function () {
-    if(!this.transparentSaveColor) {
-      this.transparentSaveColor = this.drawer.activeColor;
-    }
-  };
-  
-  /**
-   * Load color from transparentSaveColor
-   */
-  ColorTool.prototype.restoreColor = function () {
-    if(this.transparentSaveColor) {
-      this._onColorSelected(this.transparentSaveColor);
-      this.colorControl.setColor(this.transparentSaveColor);
-      this.transparentSaveColor = null;
-    }
   };
 
 
@@ -46933,7 +46887,6 @@ CloseButton.prototype._onCloseButtonClick = function() {
     this.activeToolIsShape = false;
 
     this.drawer.on(this.drawer.EVENT_CANVAS_START_RESIZE, this.hideStyleDropdown.bind(this));
-    this.drawer.on(this.drawer.EVENT_OBJECT_ADDED, this._onObjectAdded.bind(this));
   };
 
   ShapeBorder.prototype = Object.create(BaseToolOptions.prototype);
@@ -47401,7 +47354,7 @@ CloseButton.prototype._onCloseButtonClick = function() {
   ArrowOneSide.prototype = Object.create(BaseShape.prototype);
   ArrowOneSide.prototype.constructor = ArrowOneSide;
 
-  ArrowOneSide.prototype.checkOnlyWidthOrHeight = true;
+  ArrowOneSide.prototype.checkOnlyWidth = true;
 
   ArrowOneSide.prototype._defaultOptions = {
     lineAngleTooltip: {
@@ -47581,7 +47534,7 @@ CloseButton.prototype._onCloseButtonClick = function() {
   ArrowTwoSide.prototype = Object.create(BaseShape.prototype);
   ArrowTwoSide.prototype.constructor = ArrowTwoSide;
 
-  ArrowTwoSide.prototype.checkOnlyWidthOrHeight = true;
+  ArrowTwoSide.prototype.checkOnlyWidth = true;
 
   ArrowTwoSide.prototype._defaultOptions = {
     lineAngleTooltip: {
